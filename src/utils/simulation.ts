@@ -348,6 +348,15 @@ export function runSimulation(
   
   // Track power flow per battery
   const batteryCircuits: Map<string, { generation: number; load: number }> = new Map();
+  // Initialize battery circuits for all batteries to avoid order-dependent updates
+  nodes.forEach((n) => {
+    const s = n.data.spec;
+    if (s?.type === 'battery' || s?.type === 'battery-bank') {
+      if (!batteryCircuits.has(n.id)) {
+        batteryCircuits.set(n.id, { generation: 0, load: 0 });
+      }
+    }
+  });
   
   // ============================================================
   // FIRST PASS: Initialize power sources (batteries, solar, alternators)
