@@ -48,7 +48,20 @@ function DiagramEditorInner() {
 
   // Load projects on mount
   React.useEffect(() => {
-    setProjects(loadAllProjects());
+    const saved = loadAllProjects();
+    if (!saved || saved.length === 0) {
+      // No saved projects - auto-create and load the provided boat template so canvas matches diagram
+      const templateProject = createBoatDiagramProject();
+      saveProject(templateProject);
+      setCurrentProject(templateProject);
+      setNodes(templateProject.nodes as any || []);
+      setEdges(templateProject.edges as any || []);
+      setProjects(loadAllProjects());
+      setShowProjectModal(false);
+      return;
+    }
+
+    setProjects(saved);
   }, []);
 
   const onConnect = useCallback(
