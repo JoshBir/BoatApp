@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Do not persist checkout credentials to avoid git extraheader removal issues
+          persist-credentials: false
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
@@ -24,7 +28,8 @@ jobs:
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          # When using an explicit deployment token secret, leave repo_token empty
+          repo_token: ''
           action: "upload"
           app_location: "/"
           api_location: ""

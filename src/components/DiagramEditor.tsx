@@ -21,7 +21,6 @@ import { PropertiesPanel } from './sidebar/PropertiesPanel';
 import { SimulationPanel } from './sidebar/SimulationPanel';
 import { nodeTypes } from './nodes/ElectricalNodes';
 import { componentSpecs } from '../data/components';
-import { createBoatDiagramProject } from '../data/templates';
 import { ComponentType, ComponentNodeData, Project } from '../types';
 import { saveProject, loadAllProjects, createNewProject, deleteProject } from '../utils/storage';
 import { SystemSimulation } from '../utils/simulation';
@@ -282,32 +281,7 @@ function DiagramEditorInner() {
               </div>
             </div>
 
-            {/* Template Projects */}
-            <div className="mb-6">
-              <h3 className="font-semibold text-gray-800 mb-3">📋 Start from Template</h3>
-              <button
-                onClick={() => {
-                  const templateProject = createBoatDiagramProject();
-                  saveProject(templateProject);
-                  setCurrentProject(templateProject);
-                  setNodes(templateProject.nodes as any || []);
-                  setEdges(templateProject.edges as any || []);
-                  setProjects(loadAllProjects());
-                  setShowProjectModal(false);
-                }}
-                className="w-full p-4 border-2 border-dashed border-purple-300 rounded-lg hover:bg-purple-50 hover:border-purple-500 transition-colors text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">🚢☀️</span>
-                  <div>
-                    <div className="font-semibold text-purple-700">Boat Solar + DC-DC System</div>
-                    <div className="text-xs text-gray-500">
-                      Dual 100W solar panels • Renogy DCC30S • Starter & House batteries • Bus bars
-                    </div>
-                  </div>
-                </div>
-              </button>
-            </div>
+            {/* Templates removed: start-from-template option intentionally omitted */}
 
             {/* Existing Projects */}
             <div>
