@@ -23,6 +23,14 @@ export interface NodeSimState {
   outputCurrent?: number;
   solarInputPower?: number;
   alternatorInputPower?: number;
+  // DC-DC charger specific
+  chargeStage?: string; // Current charging stage (bulk, absorption, float, etc.)
+  dcDcActive?: boolean; // Whether DC-DC input is active
+  activationThreshold?: number; // Voltage threshold for DC-DC activation
+  tempCompensation?: number; // Temperature compensation voltage adjustment
+  maxOutputPower?: number; // Max output power capability
+  compensatedBulkVoltage?: number; // Temperature-compensated bulk/absorption voltage
+  compensatedFloatVoltage?: number; // Temperature-compensated float voltage
 }
 
 export interface ConnectionState {
@@ -132,7 +140,71 @@ function calculateAlternatorOutput(spec: ComponentSpec, rpm: number): { voltage:
   };
 }
 
-// Calculate battery state
+// Battery chemistry charging profiles
+interface ChargingProfile {
+  bulkVoltage: number;      // Bulk/absorption voltage
+  floatVoltage: number;     // Float voltage (0 if no float)
+  maxDischargePercent: number; // Min recommended SoC
+  maxChargeRate: number;    // Max C-rate for charging
+  voltageAtFull: number;    // Resting voltage when full
+  voltageAtEmpty: number;   // Resting voltage when empty
+  voltageAt50: number;      // Resting voltage at 50% SoC
+}
+
+const CHARGING_PROFILES: Record<string, ChargingProfile> = {
+  'lead-acid': {
+    bulkVoltage: 14.4,
+    floatVoltage: 13.6,
+    maxDischargePercent: 50,
+    maxChargeRate: 0.2,  // 20% of capacity
+    voltageAtFull: 12.7,
+    voltageAtEmpty: 11.8,
+    voltageAt50: 12.2,
+  },
+  'agm': {
+    bulkVoltage: 14.7,
+    floatVoltage: 13.8,
+    maxDischargePercent: 50,
+    maxChargeRate: 0.3,  // 30% of capacity
+    voltageAtFull: 12.8,
+    voltageAtEmpty: 11.8,
+    voltageAt50: 12.3,
+  },
+  'gel': {
+    bulkVoltage: 14.1,
+    floatVoltage: 13.5,
+    maxDischargePercent: 50,
+    maxChargeRate: 0.2,
+    voltageAtFull: 12.8,
+    voltageAtEmpty: 11.8,
+    voltageAt50: 12.3,
+  },
+  'lithium': {
+    bulkVoltage: 14.2,
+    floatVoltage: 0, // No float for lithium
+    maxDischargePercent: 20,
+    maxChargeRate: 0.5,  // 50% of capacity
+    voltageAtFull: 13.6,
+    voltageAtEmpty: 12.0,
+    voltageAt50: 13.2,
+  },
+  'lifepo4': {
+    bulkVoltage: 14.2,
+    floatVoltage: 0, // No float for LiFePO4
+    maxDischargePercent: 10,
+    maxChargeRate: 1.0,  // Can handle 1C charge rate
+    voltageAtFull: 13.6,
+    voltageAtEmpty: 12.0,
+    voltageAt50: 13.2,
+  },
+};
+
+// Get charging profile for a battery chemistry
+function getChargingProfile(chemistry?: string): ChargingProfile {
+  return CHARGING_PROFILES[chemistry || 'lead-acid'] || CHARGING_PROFILES['lead-acid'];
+}
+
+// Calculate battery state with chemistry-specific voltage curves
 function calculateBatteryState(
   spec: ComponentSpec, 
   netCurrent: number, 
@@ -141,36 +213,53 @@ function calculateBatteryState(
   previousState?: 'charging' | 'discharging' | 'idle'
 ): { voltage: number; stateOfCharge: number; state: 'charging' | 'discharging' | 'idle' } {
   const capacity = spec.capacity || 100; // Ah
+  const chemistry = spec.batteryChemistry || 'lead-acid';
+  const profile = getChargingProfile(chemistry);
   
   // Update state of charge
   const ahChange = (netCurrent * deltaTime) / 3600; // Convert to Ah
   let newSoC = currentSoC + (ahChange / capacity) * 100;
   newSoC = Math.max(0, Math.min(100, newSoC));
   
-  // Calculate voltage based on SoC (simplified LiFePO4 curve)
+  // Calculate resting voltage based on SoC and chemistry
   let voltage: number;
-  if (newSoC > 90) {
-    voltage = 13.8 + (newSoC - 90) * 0.04; // 13.8V to 14.2V
-  } else if (newSoC > 20) {
-    voltage = 12.8 + (newSoC - 20) * 0.014; // 12.8V to 13.8V
+  const isLithium = chemistry === 'lithium' || chemistry === 'lifepo4';
+  
+  if (isLithium) {
+    // LiFePO4 has a very flat voltage curve
+    if (newSoC > 95) {
+      voltage = profile.voltageAtFull + (newSoC - 95) * 0.02; // Slight rise at very top
+    } else if (newSoC > 15) {
+      // Flat region - most of the capacity
+      voltage = profile.voltageAt50 + (newSoC - 50) * 0.005;
+    } else {
+      // Steep drop at bottom
+      voltage = profile.voltageAtEmpty + newSoC * 0.08;
+    }
   } else {
-    voltage = 11.5 + newSoC * 0.065; // 11.5V to 12.8V
+    // Lead-acid/AGM/Gel - more sloped curve
+    if (newSoC > 80) {
+      voltage = profile.voltageAt50 + (newSoC - 50) * 0.01; // 12.2V to 12.7V+
+    } else if (newSoC > 20) {
+      voltage = profile.voltageAtEmpty + (newSoC - 0) * 0.015; // Linear middle region
+    } else {
+      voltage = profile.voltageAtEmpty - (20 - newSoC) * 0.02; // Steep drop below 20%
+    }
   }
   
+  // Clamp voltage to reasonable range
+  voltage = Math.max(10.5, Math.min(14.6, voltage));
+  
   // Use hysteresis to prevent flickering between states
-  // Higher threshold to enter a state, lower to exit
   let state: 'charging' | 'discharging' | 'idle';
-  const enterThreshold = 1.0; // Need 1.0A to enter charging/discharging (increased for stability)
-  const exitThreshold = 0.3;  // Drop below 0.3A to go back to idle
+  const enterThreshold = 1.0;
+  const exitThreshold = 0.3;
   
   if (previousState === 'charging') {
-    // Already charging - stay charging unless current drops significantly
     state = netCurrent > exitThreshold ? 'charging' : (netCurrent < -exitThreshold ? 'discharging' : 'idle');
   } else if (previousState === 'discharging') {
-    // Already discharging - stay discharging unless current changes significantly
     state = netCurrent < -exitThreshold ? 'discharging' : (netCurrent > exitThreshold ? 'charging' : 'idle');
   } else {
-    // Idle or unknown - need higher threshold to change state
     state = netCurrent > enterThreshold ? 'charging' : netCurrent < -enterThreshold ? 'discharging' : 'idle';
   }
   
@@ -242,6 +331,194 @@ function calculateDCDCMPPTState(
     outputCurrent,
     solarInputPower: solarInputPowerActual,
     alternatorInputPower,
+  };
+}
+
+// Chemistry-aware DC-DC MPPT charger state calculation
+// Models real DC-DC charger behavior: monitors input voltage and only charges when threshold exceeded
+// Based on Renogy DCC30S (RBC30D1S) specifications
+function calculateDCDCMPPTStateWithChemistry(
+  spec: ComponentSpec,
+  alternatorVoltage: number,
+  solarVoltage: number,
+  solarPower: number,
+  batteryVoltage: number,
+  batterySOC: number,
+  batteryCapacity: number,
+  batteryChemistry: string = 'lead-acid',
+  starterBatteryVoltage: number = 0, // Actual starter battery voltage (used for threshold detection)
+  ambientTempC: number = 25 // Ambient temperature for temp compensation
+): NodeSimState {
+  const chargeRate = spec.chargeRate || 30;
+  const maxSolarWattage = spec.maxSolarWattage || 400;
+  const maxSolarCurrent = spec.maxSolarCurrent || 30;
+  const efficiency = (spec.efficiency || 94) / 100; // DCC30S: 94% efficiency
+  const maxOutputPower = spec.maxOutputPower || 400; // DCC30S: 400W max output
+  
+  // Alternator input specs per DCC30S datasheet
+  // Traditional alternator: 13.2-16V, Smart alternator (Euro 6): 12-16V
+  const traditionalAltMin = spec.traditionalAltMin || 13.2;
+  const altInputMin = spec.alternatorInputMin || 12; // Smart alternator min
+  const altInputMax = spec.alternatorInputMax || 16;
+  const maxInputVoltage = spec.maxInputVoltage || 30; // Max 30 VDC input
+  
+  // Solar MPPT input specs
+  const solarInputMin = spec.solarInputMin || 9;
+  const solarInputMax = spec.solarInputMax || 32;
+  
+  // Output voltage range: 9-16 VDC
+  const outputVoltageMin = spec.outputVoltageMin || 9;
+  const outputVoltageMax = spec.outputVoltageMax || 16;
+  
+  // DC-DC charger activation threshold - per DCC30S spec: 13.2V for traditional alternator
+  // This means: when alternator is running, starter battery voltage rises above this
+  const dcDcActivationThreshold = traditionalAltMin; // 13.2V
+  
+  // Temperature compensation per DCC30S spec
+  // -3mV/°C/2V for non-lithium, 0mV/°C/2V for lithium
+  const tempCompNonLithium = spec.tempCompNonLithium || -3; // mV per °C per 2V cell
+  const tempCompLithium = spec.tempCompLithium || 0;
+  
+  // Get chemistry-specific charging profile
+  const profile = getChargingProfile(batteryChemistry);
+  const isLithium = batteryChemistry === 'lithium' || batteryChemistry === 'lifepo4';
+  
+  // Apply temperature compensation to charging voltage
+  // 12V battery = 6 cells x 2V, so multiply by 6 for total compensation
+  const tempDeltaC = ambientTempC - 25; // Reference temp is 25°C
+  const tempCompMv = isLithium ? tempCompLithium : tempCompNonLithium;
+  const voltageCompensation = (tempCompMv * tempDeltaC * 6) / 1000; // Convert mV to V
+  
+  // Calculate max charge current based on battery capacity and chemistry
+  const maxChemistryChargeCurrent = batteryCapacity * profile.maxChargeRate;
+  const effectiveMaxCurrent = Math.min(chargeRate, maxChemistryChargeCurrent);
+  
+  // Also limit by max output power (DCC30S: 400W)
+  const maxCurrentByPower = maxOutputPower / batteryVoltage;
+  const powerLimitedMaxCurrent = Math.min(effectiveMaxCurrent, maxCurrentByPower);
+  
+  let alternatorInputPower = 0;
+  let solarInputPowerActual = 0;
+  let outputCurrent = 0;
+  let chargeStage = 'idle';
+  let dcDcActive = false;
+  
+  // DC-DC from alternator/starter battery
+  // Only activates when starter battery voltage exceeds threshold (engine running = alternator charging)
+  // Per DCC30S spec: Traditional alternator 13.2-16V, Smart alternator 12-16V
+  const starterVoltageForCheck = starterBatteryVoltage > 0 ? starterBatteryVoltage : alternatorVoltage;
+  const inputWithinRange = alternatorVoltage >= altInputMin && alternatorVoltage <= Math.min(altInputMax, maxInputVoltage);
+  
+  // Output voltage must be within valid range (9-16V)
+  const outputVoltageValid = batteryVoltage >= outputVoltageMin && batteryVoltage <= outputVoltageMax;
+  
+  if (inputWithinRange && outputVoltageValid && starterVoltageForCheck >= dcDcActivationThreshold) {
+    // DC-DC activated by elevated starter battery voltage (alternator running)
+    dcDcActive = true;
+    const altCurrent = Math.min(powerLimitedMaxCurrent, (alternatorVoltage - batteryVoltage) * 5);
+    if (altCurrent > 0) {
+      alternatorInputPower = alternatorVoltage * altCurrent;
+      outputCurrent += altCurrent * efficiency;
+    }
+  }
+  
+  // Check solar input (MPPT) - solar always works independently of DC-DC threshold
+  const solarValid = solarVoltage >= solarInputMin && solarVoltage <= solarInputMax && outputVoltageValid;
+  if (solarValid && solarPower > 0) {
+    solarInputPowerActual = Math.min(solarPower, maxSolarWattage);
+    const solarChargeCurrent = Math.min(
+      solarInputPowerActual * efficiency / batteryVoltage,
+      maxSolarCurrent,
+      powerLimitedMaxCurrent - outputCurrent // Don't exceed total max current
+    );
+    outputCurrent += Math.max(0, solarChargeCurrent);
+  }
+  
+  // Apply chemistry-specific charging algorithm
+  // Temperature-compensated charging voltage targets (for lead-acid types)
+  // Non-lithium: -3mV/°C/2V (e.g., at 35°C, reduce by 60mV per cell = -0.36V for 12V battery)
+  // Lithium: No temperature compensation needed (0mV/°C/2V)
+  const compensatedBulkVoltage = profile.bulkVoltage + voltageCompensation;
+  const compensatedFloatVoltage = profile.floatVoltage + voltageCompensation;
+  
+  if (outputCurrent > 0) {
+    if (isLithium) {
+      // Lithium/LiFePO4: CC-CV charging, NO float stage
+      // Bulk (CC): Full current until ~95% SOC or voltage reaches 14.2-14.6V
+      // Absorption (CV): Hold voltage, taper current until ~100%
+      // Then STOP - no float for lithium!
+      if (batterySOC < 95) {
+        // Bulk/CC stage - full current
+        chargeStage = 'bulk (CC)';
+      } else if (batterySOC < 100) {
+        // CV stage - taper current as battery reaches full
+        chargeStage = 'absorption (CV)';
+        outputCurrent *= (100 - batterySOC) / 5;
+      } else {
+        // Full - stop charging completely
+        chargeStage = 'full - stopped';
+        outputCurrent = 0;
+      }
+    } else {
+      // Lead-acid/AGM/Gel: 3-stage charging (Bulk -> Absorption -> Float)
+      // Bulk: Max current until ~80% SOC or voltage reaches bulk voltage
+      // Absorption: Hold voltage, taper current until battery accepts minimal current
+      // Float: Maintain at lower voltage indefinitely (with temp compensation)
+      // Compensated voltages: Bulk=${compensatedBulkVoltage.toFixed(2)}V, Float=${compensatedFloatVoltage.toFixed(2)}V
+      if (batterySOC < 80) {
+        // Bulk stage - max current
+        chargeStage = 'bulk';
+      } else if (batterySOC < 95) {
+        // Absorption stage - hold voltage, taper current
+        chargeStage = 'absorption';
+        outputCurrent *= 0.7 + ((95 - batterySOC) / 15) * 0.3;
+      } else {
+        // Float stage - minimal current to maintain charge
+        chargeStage = 'float';
+        outputCurrent *= 0.1; // ~10% of max current in float
+      }
+    }
+  }
+  
+  // Cap at power-limited max charge rate
+  outputCurrent = Math.min(outputCurrent, powerLimitedMaxCurrent);
+  
+  const outputPower = outputCurrent * batteryVoltage;
+  
+  // Determine state description
+  let stateStr: 'on' | 'off' | 'charging' | 'discharging' | 'idle' | 'fault' = 'idle';
+  if (outputCurrent > 0.1) {
+    stateStr = 'charging';
+  } else if (dcDcActive || solarInputPowerActual > 0) {
+    stateStr = 'on';
+  }
+  
+  // Check for fault conditions (per DCC30S protection features)
+  if (alternatorVoltage > maxInputVoltage) {
+    stateStr = 'fault'; // Overvoltage protection
+    chargeStage = 'overvoltage protection';
+    outputCurrent = 0;
+  }
+  
+  return {
+    voltage: batteryVoltage,
+    current: outputCurrent,
+    power: outputPower,
+    state: stateStr,
+    efficiency: efficiency * 100,
+    inputVoltage: Math.max(alternatorVoltage, solarVoltage),
+    outputVoltage: batteryVoltage,
+    inputCurrent: (alternatorInputPower + solarInputPowerActual) / Math.max(alternatorVoltage, solarVoltage, 1),
+    outputCurrent,
+    solarInputPower: solarInputPowerActual,
+    alternatorInputPower,
+    chargeStage,
+    dcDcActive,
+    activationThreshold: dcDcActivationThreshold,
+    tempCompensation: voltageCompensation,
+    maxOutputPower,
+    compensatedBulkVoltage,
+    compensatedFloatVoltage,
   };
 }
 
@@ -326,7 +603,7 @@ export function runSimulation(
   
   // Check if a node is connected to any battery
   const isConnectedToBattery = (nodeId: string): boolean => {
-    const batteries = findConnectedByType(nodeId, ['battery', 'battery-bank']);
+    const batteries = findConnectedByType(nodeId, ['battery', 'battery-bank', 'starter-battery', 'house-battery']);
     return batteries.length > 0;
   };
   
@@ -336,13 +613,18 @@ export function runSimulation(
     return allConnected.some(n => 
       n.data.spec?.type === 'battery' || 
       n.data.spec?.type === 'battery-bank' ||
-      n.data.spec?.category === 'charging'
+      n.data.spec?.type === 'starter-battery' ||
+      n.data.spec?.type === 'house-battery' ||
+      n.data.spec?.type === 'shore-power' ||
+      n.data.spec?.type === 'alternator' ||
+      n.data.spec?.category === 'charging' ||
+      n.data.spec?.category === 'power-source' // Include all power sources
     );
   };
   
   // Find the first connected battery
   const findConnectedBattery = (nodeId: string): Node<ComponentNodeData> | null => {
-    const batteries = findConnectedByType(nodeId, ['battery', 'battery-bank']);
+    const batteries = findConnectedByType(nodeId, ['battery', 'battery-bank', 'starter-battery', 'house-battery']);
     return batteries[0] || null;
   };
   
@@ -351,7 +633,7 @@ export function runSimulation(
   // Initialize battery circuits for all batteries to avoid order-dependent updates
   nodes.forEach((n) => {
     const s = n.data.spec;
-    if (s?.type === 'battery' || s?.type === 'battery-bank') {
+    if (s?.type === 'battery' || s?.type === 'battery-bank' || s?.type === 'starter-battery' || s?.type === 'house-battery') {
       if (!batteryCircuits.has(n.id)) {
         batteryCircuits.set(n.id, { generation: 0, load: 0 });
       }
@@ -372,7 +654,7 @@ export function runSimulation(
     
     switch (spec.category) {
       case 'power-source': {
-        if (spec.type === 'battery' || spec.type === 'battery-bank') {
+        if (spec.type === 'battery' || spec.type === 'battery-bank' || spec.type === 'starter-battery' || spec.type === 'house-battery') {
           const currentSoC = prevState?.stateOfCharge ?? 80; // Start at 80%
           
           // Battery circuits already pre-initialized above - don't reset here
@@ -430,7 +712,7 @@ export function runSimulation(
             totalGeneration += alt.power;
             // Add to ALL directly connected batteries' circuits
             // (Alternator charges starter battery, DC-DC charger handles house battery separately)
-            const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank']);
+            const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank', 'starter-battery', 'house-battery']);
             connectedBatteries.forEach((battery) => {
               const circuit = batteryCircuits.get(battery.id);
               if (circuit) {
@@ -467,13 +749,23 @@ export function runSimulation(
           let targetBatteryVoltage = systemVoltage;
           let targetBatterySoC = 50;
           let targetBatteryId: string | null = null;
+          let targetBatteryChemistry = 'lead-acid';
+          let targetBatteryCapacity = 100;
           let sourceBatteryId: string | null = null;
           
           // Get ALL connected nodes
           const allConnected = traceAllConnections(node.id);
           
           // Separate batteries into potential source (starter) and target (house)
-          const connectedBatteries: { id: string; voltage: number; soc: number; label: string }[] = [];
+          const connectedBatteries: { 
+            id: string; 
+            voltage: number; 
+            soc: number; 
+            label: string; 
+            role?: 'starter' | 'house' | 'generic';
+            chemistry: string;
+            capacity: number;
+          }[] = [];
           
           allConnected.forEach((connectedNode) => {
             const type = connectedNode.data.spec?.type;
@@ -490,54 +782,76 @@ export function runSimulation(
                 inputVoltage = state.voltage;
               }
             }
-            if (type === 'battery' || type === 'battery-bank') {
+            // Support all battery types including explicit starter-battery and house-battery
+            if (type === 'battery' || type === 'battery-bank' || type === 'starter-battery' || type === 'house-battery') {
               if (state) {
+                // Determine battery role: explicit type, batteryRole property, or infer from name
+                const batteryRole = connectedNode.data.spec?.batteryRole;
+                const batteryChemistry = (connectedNode.data.customValues?.batteryChemistry as string) || 
+                                        connectedNode.data.spec?.batteryChemistry || 'lead-acid';
+                const batteryCapacity = (connectedNode.data.customValues?.capacity as number) || 
+                                       connectedNode.data.spec?.capacity || 100;
+                const label = (connectedNode.data.label || '').toLowerCase();
+                
+                let role: 'starter' | 'house' | 'generic' = 'generic';
+                if (type === 'starter-battery' || batteryRole === 'starter') {
+                  role = 'starter';
+                } else if (type === 'house-battery' || batteryRole === 'house') {
+                  role = 'house';
+                } else if (label.includes('starter') || label.includes('start') || label.includes('engine')) {
+                  role = 'starter';
+                } else if (label.includes('house') || label.includes('lithium') || label.includes('aux') || label.includes('lifepo')) {
+                  role = 'house';
+                }
+                
                 connectedBatteries.push({
                   id: connectedNode.id,
                   voltage: state.voltage,
                   soc: state.stateOfCharge || 50,
-                  label: (connectedNode.data.label || '').toLowerCase(),
+                  label: label,
+                  role: role,
+                  chemistry: batteryChemistry,
+                  capacity: batteryCapacity,
                 });
               }
             }
           });
           
           // Determine source and target batteries
-          // Logic: If battery name contains "starter" or "start", it's the source
-          // Otherwise, battery with higher SoC is source, lower SoC is target
+          // Logic: Starter battery is the source (charged by alternator), House battery is the target
+          // DC-DC activates based on starter battery voltage (threshold ~13.3V), NOT just engine running flag
+          let starterBatteryVoltage = 0;
+          
           if (connectedBatteries.length >= 2) {
-            // Try to identify by name first
-            const starterBatt = connectedBatteries.find(b => 
-              b.label.includes('starter') || b.label.includes('start') || b.label.includes('engine')
-            );
-            const houseBatt = connectedBatteries.find(b => 
-              b.label.includes('house') || b.label.includes('lithium') || b.label.includes('aux') || b.label.includes('lifepo')
-            );
+            // Use explicit role first
+            const starterBatt = connectedBatteries.find(b => b.role === 'starter');
+            const houseBatt = connectedBatteries.find(b => b.role === 'house');
             
             if (starterBatt && houseBatt) {
               sourceBatteryId = starterBatt.id;
-              // Only use starter battery as DC-DC input if engine is running (simulates alternator charging it)
-              // Otherwise DC-DC shouldn't drain the starter battery
-              if (environment.engineRunning) {
-                inputVoltage = Math.max(inputVoltage, starterBatt.voltage);
-              }
+              starterBatteryVoltage = starterBatt.voltage;
+              // DC-DC input voltage comes from starter battery (which is charged by alternator)
+              // The DC-DC charger will use voltage threshold internally to decide if it should activate
+              inputVoltage = Math.max(inputVoltage, starterBatt.voltage);
               targetBatteryId = houseBatt.id;
               targetBatteryVoltage = houseBatt.voltage;
               targetBatterySoC = houseBatt.soc;
+              targetBatteryChemistry = houseBatt.chemistry;
+              targetBatteryCapacity = houseBatt.capacity;
             } else {
               // Fall back to stable ID-based detection to prevent flickering
               // Sort by node ID for consistent ordering (first battery = source, second = target)
               const sorted = [...connectedBatteries].sort((a, b) => a.id.localeCompare(b.id));
               sourceBatteryId = sorted[0].id;
-              // Only use source battery as input if engine running
-              if (environment.engineRunning) {
-                inputVoltage = Math.max(inputVoltage, sorted[0].voltage);
-              }
+              starterBatteryVoltage = sorted[0].voltage;
+              inputVoltage = Math.max(inputVoltage, sorted[0].voltage);
               // Use the second battery as target (or first if only one)
               const targetIdx = sorted.length > 1 ? 1 : 0;
               targetBatteryId = sorted[targetIdx].id;
               targetBatteryVoltage = sorted[targetIdx].voltage;
               targetBatterySoC = sorted[targetIdx].soc;
+              targetBatteryChemistry = sorted[targetIdx].chemistry;
+              targetBatteryCapacity = sorted[targetIdx].capacity;
             }
           } else if (connectedBatteries.length === 1) {
             // Single battery - it's the target, alternator/starter is the source (if connected)
@@ -545,6 +859,8 @@ export function runSimulation(
             targetBatteryId = connectedBatteries[0].id;
             targetBatteryVoltage = connectedBatteries[0].voltage;
             targetBatterySoC = connectedBatteries[0].soc;
+            targetBatteryChemistry = connectedBatteries[0].chemistry;
+            targetBatteryCapacity = connectedBatteries[0].capacity;
             // inputVoltage stays at whatever we found from alternator (or 0 if no alternator)
           }
           
@@ -553,8 +869,13 @@ export function runSimulation(
           const hasInput = inputVoltage > 10 || solarPower > 0;
           
           if (targetBatteryId && hasInput) {
-            const dcdcState = calculateDCDCMPPTState(
-              spec, inputVoltage, solarVoltage, solarPower, targetBatteryVoltage, targetBatterySoC
+            // Use chemistry-aware charging for proper bulk/absorption/float stages
+            // Pass starterBatteryVoltage so DC-DC can use voltage threshold activation
+            const dcdcState = calculateDCDCMPPTStateWithChemistry(
+              spec, inputVoltage, solarVoltage, solarPower, 
+              targetBatteryVoltage, targetBatterySoC,
+              targetBatteryCapacity, targetBatteryChemistry,
+              starterBatteryVoltage
             );
             nodeStates[node.id] = dcdcState;
             totalGeneration += dcdcState.power;
@@ -753,7 +1074,7 @@ export function runSimulation(
   
   nodes.forEach((node) => {
     const spec = node.data.spec;
-    if (spec?.type === 'battery' || spec?.type === 'battery-bank') {
+    if (spec?.type === 'battery' || spec?.type === 'battery-bank' || spec?.type === 'starter-battery' || spec?.type === 'house-battery') {
       const prevState = previousState?.nodes[node.id];
       const currentSoC = prevState?.stateOfCharge ?? 80;
       const previousBatteryState = prevState?.state as 'charging' | 'discharging' | 'idle' | undefined;
@@ -862,7 +1183,7 @@ export function runSimulation(
     
     // Check for alternators not connected to anything useful
     if (spec.type === 'alternator') {
-      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank']);
+      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank', 'starter-battery', 'house-battery']);
       const connectedChargers = findConnectedByCategory(node.id, ['charging']);
       if (connectedBatteries.length === 0 && connectedChargers.length === 0 && environment.engineRunning) {
         warnings.push(`${node.data.label} is running but not connected to a battery or charger`);
@@ -871,7 +1192,7 @@ export function runSimulation(
     
     // Check for chargers with no battery downstream
     if (spec.category === 'charging') {
-      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank']);
+      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank', 'starter-battery', 'house-battery']);
       if (connectedBatteries.length === 0) {
         warnings.push(`${node.data.label} has no battery connected to charge`);
       }
@@ -881,7 +1202,7 @@ export function runSimulation(
     if (spec.type === 'dc-dc-mppt-charger') {
       const connectedSolar = findConnectedByType(node.id, ['solar-panel', 'solar-array']);
       const connectedAlt = findConnectedByType(node.id, ['alternator']);
-      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank']);
+      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank', 'starter-battery', 'house-battery']);
       
       if (connectedSolar.length === 0 && connectedAlt.length === 0 && connectedBatteries.length < 2) {
         warnings.push(`${node.data.label} has no power input (solar, alternator, or starter battery)`);
@@ -892,10 +1213,22 @@ export function runSimulation(
   // Check for batteries not connected to any loads or chargers
   nodes.forEach((node) => {
     const spec = node.data.spec;
-    if ((spec?.type === 'battery' || spec?.type === 'battery-bank') && isNodeConnected(node.id)) {
+    if ((spec?.type === 'battery' || spec?.type === 'battery-bank' || spec?.type === 'starter-battery' || spec?.type === 'house-battery') && isNodeConnected(node.id)) {
       const allConnected = traceAllConnections(node.id);
       const hasLoads = allConnected.some(n => n.data.spec?.category === 'load');
       const hasChargers = allConnected.some(n => n.data.spec?.category === 'charging');
+      
+      // Starter batteries should NOT have house loads connected
+      if (spec?.type === 'starter-battery' || spec?.batteryRole === 'starter') {
+        const hasNonStarterLoads = allConnected.some(n => {
+          const loadType = n.data.spec?.type;
+          // Only starter-motor and engine-related loads should be on starter battery
+          return n.data.spec?.category === 'load' && loadType !== 'starter-motor' && loadType !== 'engine';
+        });
+        if (hasNonStarterLoads) {
+          warnings.push(`⚠️ ${node.data.label} has house loads connected! Starter battery should only power starter motor.`);
+        }
+      }
       
       if (!hasLoads && !hasChargers) {
         warnings.push(`${node.data.label} is not connected to any loads or chargers`);
@@ -913,7 +1246,10 @@ export function runSimulation(
     if (spec?.category === 'load' && isNodeConnected(node.id)) {
       const allConnected = traceAllConnections(node.id);
       const hasProtection = allConnected.some(n => n.data.spec?.category === 'protection');
-      const hasBattery = allConnected.some(n => n.data.spec?.type === 'battery' || n.data.spec?.type === 'battery-bank');
+      const hasBattery = allConnected.some(n => 
+        n.data.spec?.type === 'battery' || n.data.spec?.type === 'battery-bank' ||
+        n.data.spec?.type === 'starter-battery' || n.data.spec?.type === 'house-battery'
+      );
       
       if (hasBattery && !hasProtection) {
         warnings.push(`⚠️ ${node.data.label} has no fuse/breaker protection!`);
@@ -954,15 +1290,20 @@ export function runSimulation(
     }
   });
   
-  // Check for battery capacity vs daily load mismatch
+  // Check for battery capacity vs daily load mismatch (only house batteries should be counted for house loads)
   let totalBatteryCapacity = 0;
   let totalDailyLoadAh = 0;
   
   nodes.forEach((node) => {
     const spec = node.data.spec;
-    if (spec?.type === 'battery' || spec?.type === 'battery-bank') {
-      const capacity = (node.data.customValues?.capacity as number) || spec.capacity || 100;
-      totalBatteryCapacity += capacity;
+    // Only count house batteries and generic batteries for capacity calculations
+    // Starter batteries are reserved for engine starting
+    if (spec?.type === 'battery' || spec?.type === 'battery-bank' || spec?.type === 'house-battery') {
+      // Exclude starter batteries from house capacity calculations
+      if (spec?.type !== 'starter-battery' && spec?.batteryRole !== 'starter') {
+        const capacity = (node.data.customValues?.capacity as number) || spec.capacity || 100;
+        totalBatteryCapacity += capacity;
+      }
     }
     if (spec?.category === 'load') {
       const state = nodeStates[node.id];
@@ -989,7 +1330,7 @@ export function runSimulation(
     const spec = node.data.spec;
     if (spec?.category === 'charging') {
       const chargerRate = (node.data.customValues?.chargeRate as number) || spec.chargeRate || 30;
-      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank']);
+      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank', 'starter-battery', 'house-battery']);
       
       connectedBatteries.forEach((battNode) => {
         const battSpec = battNode.data.spec;
@@ -1029,7 +1370,7 @@ export function runSimulation(
   // Check for battery discharge rate (C-rate warning)
   nodes.forEach((node) => {
     const spec = node.data.spec;
-    if ((spec?.type === 'battery' || spec?.type === 'battery-bank') && isNodeConnected(node.id)) {
+    if ((spec?.type === 'battery' || spec?.type === 'battery-bank' || spec?.type === 'starter-battery' || spec?.type === 'house-battery') && isNodeConnected(node.id)) {
       const state = nodeStates[node.id];
       const capacity = (node.data.customValues?.capacity as number) || spec?.capacity || 100;
       const isLithium = (node.data.label || '').toLowerCase().includes('lithium') || 
@@ -1096,9 +1437,21 @@ export function runSimulation(
   });
   
   // Check for multiple batteries with mismatched voltages (parallel danger)
-  const batteries = nodes.filter(n => n.data.spec?.type === 'battery' || n.data.spec?.type === 'battery-bank');
-  if (batteries.length >= 2) {
-    const batteryVoltages = batteries.map(b => {
+  // Note: Only check batteries of the same role - starter and house batteries SHOULD be on separate circuits
+  const batteries = nodes.filter(n => 
+    n.data.spec?.type === 'battery' || n.data.spec?.type === 'battery-bank' ||
+    n.data.spec?.type === 'starter-battery' || n.data.spec?.type === 'house-battery'
+  );
+  
+  // Group batteries by role for voltage mismatch checking
+  const houseBatteries = batteries.filter(b => 
+    b.data.spec?.type === 'house-battery' || 
+    b.data.spec?.batteryRole === 'house' ||
+    (b.data.spec?.batteryRole !== 'starter' && b.data.spec?.type !== 'starter-battery')
+  );
+  
+  if (houseBatteries.length >= 2) {
+    const batteryVoltages = houseBatteries.map(b => {
       const state = nodeStates[b.id];
       return { label: b.data.label, voltage: state?.voltage || 12 };
     });
@@ -1117,7 +1470,7 @@ export function runSimulation(
   nodes.forEach((node) => {
     const spec = node.data.spec;
     if (spec?.type === 'alternator' && isNodeConnected(node.id)) {
-      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank']);
+      const connectedBatteries = findConnectedByType(node.id, ['battery', 'battery-bank', 'starter-battery', 'house-battery']);
       const connectedChargers = findConnectedByCategory(node.id, ['charging']);
       
       connectedBatteries.forEach((batt) => {

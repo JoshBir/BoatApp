@@ -149,6 +149,30 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           </div>
         )}
 
+        {/* Battery Chemistry Selection */}
+        {spec?.customizable?.includes('batteryChemistry') && (
+          <div>
+            <label className="text-sm font-medium text-gray-700">Battery Chemistry</label>
+            <select
+              value={(data.customValues?.batteryChemistry as string) || spec.batteryChemistry || 'lead-acid'}
+              onChange={(e) => handleCustomValueChange('batteryChemistry', e.target.value)}
+              className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md"
+            >
+              <option value="lead-acid">Lead Acid (Flooded)</option>
+              <option value="agm">AGM (Absorbed Glass Mat)</option>
+              <option value="gel">Gel</option>
+              <option value="lithium">Lithium Ion</option>
+              <option value="lifepo4">LiFePO4 (Lithium Iron Phosphate)</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {(data.customValues?.batteryChemistry || spec.batteryChemistry) === 'lifepo4' || 
+               (data.customValues?.batteryChemistry || spec.batteryChemistry) === 'lithium' 
+                ? '⚡ Lithium: 80%+ usable, charges to 14.2V, no float'
+                : '🔋 Lead-based: 50% usable, 3-stage charging (bulk/absorption/float)'}
+            </p>
+          </div>
+        )}
+
         {spec?.customizable?.includes('rating') && (
           <div>
             <label className="text-sm font-medium text-gray-700">Rating (Amps)</label>

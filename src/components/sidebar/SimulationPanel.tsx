@@ -129,11 +129,12 @@ function calculateChargeSummary(
   let totalAhRemaining = 0;
   let batteryCount = 0;
   
-  // Calculate battery stats
+  // Calculate battery stats - include all battery types
+  const batteryTypes = ['battery', 'battery-bank', 'starter-battery', 'house-battery'];
   nodes.forEach((node) => {
     const spec = node.data.spec;
-    if (spec?.type === 'battery' || spec?.type === 'battery-bank') {
-      const capacity = (node.data.customValues?.capacity as number) || spec.capacity || 100;
+    if (batteryTypes.includes(spec?.type || '')) {
+      const capacity = (node.data.customValues?.capacity as number) || spec?.capacity || 100;
       const state = simulation.nodes[node.id];
       const soc = state?.stateOfCharge ?? 80;
       
@@ -377,11 +378,11 @@ function runScenarioSimulation(
   edges: Edge[],
   config: ScenarioConfig
 ): ScenarioSummary {
-  // Calculate total battery capacity
+  // Calculate total battery capacity (all battery types including starter and house)
   let totalBatteryCapacity = 0;
   nodes.forEach((node) => {
     const spec = node.data.spec;
-    if (spec?.type === 'battery' || spec?.type === 'battery-bank') {
+    if (spec?.type === 'battery' || spec?.type === 'battery-bank' || spec?.type === 'starter-battery' || spec?.type === 'house-battery') {
       totalBatteryCapacity += (node.data.customValues?.capacity as number) || spec.capacity || 100;
     }
   });
@@ -1513,12 +1514,12 @@ export const SimulationPanel: React.FC<SimulationPanelProps> = ({
             {simulation && (
               <div className="space-y-2 text-sm max-h-32 overflow-y-auto">
                 {nodes
-                  .filter((n) => ['battery', 'battery-bank', 'dc-dc-mppt-charger', 'dc-dc-charger'].includes(n.data.spec?.type || ''))
+                  .filter((n) => ['battery', 'battery-bank', 'starter-battery', 'house-battery', 'dc-dc-mppt-charger', 'dc-dc-charger'].includes(n.data.spec?.type || ''))
                   .map((node) => {
                     const state = simulation.nodes[node.id];
                     if (!state) return null;
                     
-                    const isBattery = node.data.spec?.type === 'battery' || node.data.spec?.type === 'battery-bank';
+                    const isBattery = ['battery', 'battery-bank', 'starter-battery', 'house-battery'].includes(node.data.spec?.type || '');
                     const isCharger = node.data.spec?.type?.includes('charger');
                     
                     return (
@@ -1548,9 +1549,35 @@ export const SimulationPanel: React.FC<SimulationPanelProps> = ({
                               {state.solarInputPower !== undefined && state.solarInputPower > 0 && (
                                 <span className="text-yellow-400">☀️{state.solarInputPower.toFixed(0)}W</span>
                               )}
+                              {(state as any).alternatorInputPower !== undefined && (state as any).alternatorInputPower > 0 && (
+                                <span className="text-green-400">⚡{((state as any).alternatorInputPower as number).toFixed(0)}W</span>
+                              )}
                             </>
                           )}
                         </div>
+                        {/* Charge stage indicator for chargers */}
+                        {isCharger && (state as any).chargeStage && (state as any).chargeStage !== 'idle' && (
+                          <div className="mt-1 text-xs">
+                            <span className={`px-1.5 py-0.5 rounded ${
+                              (state as any).chargeStage?.includes('bulk') ? 'bg-green-700 text-green-200' :
+                              (state as any).chargeStage?.includes('absorption') ? 'bg-yellow-700 text-yellow-200' :
+                              (state as any).chargeStage?.includes('float') ? 'bg-blue-700 text-blue-200' :
+                              (state as any).chargeStage?.includes('full') ? 'bg-purple-700 text-purple-200' :
+                              'bg-gray-600 text-gray-300'
+                            }`}>
+                              {(state as any).chargeStage}
+                            </span>
+                            {(state as any).dcDcActive === false && (state as any).solarInputPower > 0 && (
+                              <span className="ml-1 text-gray-400">(solar only)</span>
+                            )}
+                          </div>
+                        )}
+                        {/* DC-DC inactive indicator */}
+                        {isCharger && (state as any).dcDcActive === false && state.state === 'idle' && (
+                          <div className="mt-1 text-xs text-gray-500">
+                            ⏸️ DC-DC waiting (starter &lt; 13.3V)
+                          </div>
+                        )}
                         {isBattery && state.stateOfCharge !== undefined && (
                           <div className="mt-1 h-2 bg-gray-600 rounded overflow-hidden">
                             <div

@@ -63,6 +63,108 @@ export const BatteryNode = memo(({ data, selected }: ElectricalNodeProps) => {
   );
 });
 
+// Starter/Engine Battery - SEPARATE CIRCUIT for starting only
+export const StarterBatteryNode = memo(({ data, selected }: ElectricalNodeProps) => {
+  const capacity = data.customValues?.capacity || data.spec?.capacity || 75;
+
+  return (
+    <div className={`px-4 py-3 rounded-lg border-2 bg-amber-100 border-amber-600 ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[160px] relative`}>
+      <RotationBadge rotation={data.rotation} />
+      {/* Negative terminal */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-in" style={{ top: '70%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-out" style={{ top: '70%' }} />
+      
+      {/* Positive terminal */}
+      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-in" style={{ top: '30%' }} />
+      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-out" style={{ top: '30%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[8px] font-bold text-blue-600" style={{ top: '65%' }}>NEG-</div>
+      <div className="absolute right-1 text-[8px] font-bold text-red-600" style={{ top: '25%' }}>POS+</div>
+      
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-2xl">🔋⚡</span>
+        <div className="font-semibold text-amber-800">{data.label}</div>
+      </div>
+      <div className="text-xs text-amber-700">
+        <div className="font-bold bg-amber-200 px-1 rounded mb-1">ENGINE CIRCUIT</div>
+        <div>{capacity} Ah • 12V</div>
+        <div className="text-[10px] text-amber-600 mt-1">
+          ⚠️ Starter only - separate from house!
+        </div>
+      </div>
+      {data.warnings.length > 0 && (
+        <div className="mt-1 text-xs text-yellow-600">⚠️ {data.warnings.length} warning(s)</div>
+      )}
+      {data.errors.length > 0 && (
+        <div className="mt-1 text-xs text-red-600">❌ {data.errors.length} error(s)</div>
+      )}
+    </div>
+  );
+});
+
+// Chemistry labels for display
+const chemistryLabels: Record<string, { label: string; color: string }> = {
+  'lead-acid': { label: 'Lead Acid', color: 'bg-gray-200 text-gray-700' },
+  'agm': { label: 'AGM', color: 'bg-blue-200 text-blue-700' },
+  'gel': { label: 'Gel', color: 'bg-purple-200 text-purple-700' },
+  'lithium': { label: 'Lithium', color: 'bg-green-200 text-green-700' },
+  'lifepo4': { label: 'LiFePO4', color: 'bg-emerald-200 text-emerald-700' },
+};
+
+// House Battery Bank - SEPARATE CIRCUIT for house loads
+export const HouseBatteryNode = memo(({ data, selected }: ElectricalNodeProps) => {
+  const capacity = data.customValues?.capacity || data.spec?.capacity || 200;
+  const chemistry = (data.customValues?.batteryChemistry as string) || data.spec?.batteryChemistry || 'lead-acid';
+  const chemInfo = chemistryLabels[chemistry] || chemistryLabels['lead-acid'];
+  const isLithium = chemistry === 'lithium' || chemistry === 'lifepo4';
+  
+  // Use different colors for lithium vs lead-acid
+  const bgColor = isLithium ? 'bg-emerald-100' : 'bg-cyan-100';
+  const borderColor = isLithium ? 'border-emerald-600' : 'border-cyan-600';
+  const textColor = isLithium ? 'text-emerald-800' : 'text-cyan-800';
+  const secondaryText = isLithium ? 'text-emerald-700' : 'text-cyan-700';
+  const labelBg = isLithium ? 'bg-emerald-200' : 'bg-cyan-200';
+
+  return (
+    <div className={`px-4 py-3 rounded-lg border-2 ${bgColor} ${borderColor} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[160px] relative`}>
+      <RotationBadge rotation={data.rotation} />
+      {/* Negative terminal */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-in" style={{ top: '70%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-out" style={{ top: '70%' }} />
+      
+      {/* Positive terminal */}
+      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-in" style={{ top: '30%' }} />
+      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-out" style={{ top: '30%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[8px] font-bold text-blue-600" style={{ top: '65%' }}>NEG-</div>
+      <div className="absolute right-1 text-[8px] font-bold text-red-600" style={{ top: '25%' }}>POS+</div>
+      
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-2xl">{isLithium ? '🔋⚡🏠' : '🔋🏠'}</span>
+        <div className={`font-semibold ${textColor}`}>{data.label}</div>
+      </div>
+      <div className={`text-xs ${secondaryText}`}>
+        <div className="flex gap-1 mb-1">
+          <span className={`font-bold ${labelBg} px-1 rounded`}>HOUSE</span>
+          <span className={`font-bold ${chemInfo.color} px-1 rounded`}>{chemInfo.label}</span>
+        </div>
+        <div>{capacity} Ah • 12V</div>
+        <div className="text-[10px] mt-1">
+          {isLithium ? '⚡ 80%+ usable • No float' : '🔋 50% max discharge'}
+        </div>
+      </div>
+      {data.warnings.length > 0 && (
+        <div className="mt-1 text-xs text-yellow-600">⚠️ {data.warnings.length} warning(s)</div>
+      )}
+      {data.errors.length > 0 && (
+        <div className="mt-1 text-xs text-red-600">❌ {data.errors.length} error(s)</div>
+      )}
+    </div>
+  );
+});
+
 export const SolarPanelNode = memo(({ data, selected }: ElectricalNodeProps) => {
   const colors = categoryColors['power-source'];
   const wattage = data.customValues?.wattage || data.spec?.wattage || 100;
@@ -70,8 +172,17 @@ export const SolarPanelNode = memo(({ data, selected }: ElectricalNodeProps) => 
   return (
     <div className={`px-4 py-3 rounded-lg border-2 ${colors.bg} ${colors.border} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[140px] relative`}>
       <RotationBadge rotation={data.rotation} />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative" />
-      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive" />
+      {/* Negative terminal - bidirectional */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-in" style={{ top: '70%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-out" style={{ top: '70%' }} />
+      
+      {/* Positive terminal - bidirectional */}
+      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-in" style={{ top: '30%' }} />
+      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-out" style={{ top: '30%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[8px] font-bold text-blue-600" style={{ top: '65%' }}>NEG-</div>
+      <div className="absolute right-1 text-[8px] font-bold text-red-600" style={{ top: '25%' }}>POS+</div>
       
       <div className="flex items-center gap-2 mb-1">
         <span className="text-2xl">☀️</span>
@@ -110,8 +221,17 @@ export const SolarArrayNode = memo(({ data, selected }: ElectricalNodeProps) => 
   return (
     <div className={`px-4 py-3 rounded-lg border-2 ${colors.bg} ${colors.border} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[160px] relative`}>
       <RotationBadge rotation={data.rotation} />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative" />
-      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive" />
+      {/* Negative terminal - bidirectional */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-in" style={{ top: '70%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-out" style={{ top: '70%' }} />
+      
+      {/* Positive terminal - bidirectional */}
+      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-in" style={{ top: '30%' }} />
+      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-out" style={{ top: '30%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[8px] font-bold text-blue-600" style={{ top: '65%' }}>NEG-</div>
+      <div className="absolute right-1 text-[8px] font-bold text-red-600" style={{ top: '25%' }}>POS+</div>
       
       <div className="flex items-center gap-2 mb-1">
         <span className="text-2xl">☀️☀️</span>
@@ -175,12 +295,16 @@ export const FuseNode = memo(({ data, selected }: ElectricalNodeProps) => {
   return (
     <div className={`px-3 py-2 rounded border-2 ${colors.bg} ${colors.border} ${selected ? 'ring-2 ring-blue-400' : ''} relative`}>
       <RotationBadge rotation={data.rotation} />
-      {/* Bidirectional - fuses work both ways */}
-      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-gray-500" id="in" />
-      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-gray-500" id="in-out" />
+      {/* Bidirectional - fuses work both ways (installed on positive line) */}
+      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-red-500" id="positive-in" />
+      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-red-500" id="positive-in-out" />
       
-      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-gray-500" id="out" />
-      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-gray-500" id="out-in" />
+      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out" />
+      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out-in" />
+      
+      {/* Terminal labels */}
+      <div className="absolute -left-1 text-[7px] font-bold text-red-600" style={{ top: '-8px' }}>POS</div>
+      <div className="absolute -right-1 text-[7px] font-bold text-red-600" style={{ top: '-8px' }}>POS</div>
       
       <div className="flex items-center gap-1">
         <span>⚡</span>
@@ -197,12 +321,16 @@ export const SwitchNode = memo(({ data, selected }: ElectricalNodeProps) => {
   return (
     <div className={`px-4 py-3 rounded-lg border-2 ${colors.bg} ${colors.border} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[120px] relative`}>
       <RotationBadge rotation={data.rotation} />
-      {/* Bidirectional - switches work both ways */}
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-gray-500" id="in" />
-      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-gray-500" id="in-out" />
+      {/* Bidirectional - switches work both ways (installed on positive line) */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-red-500" id="positive-in" />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-red-500" id="positive-in-out" />
       
-      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-gray-500" id="out" />
-      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-gray-500" id="out-in" />
+      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-out" />
+      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-red-500" id="positive-out-in" />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[8px] font-bold text-red-600" style={{ top: '2px' }}>POS+</div>
+      <div className="absolute right-1 text-[8px] font-bold text-red-600" style={{ top: '2px' }}>POS+</div>
       
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xl">🔘</span>
@@ -221,8 +349,17 @@ export const LoadNode = memo(({ data, selected }: ElectricalNodeProps) => {
   return (
     <div className={`px-4 py-3 rounded-lg border-2 ${isOn ? colors.bg : 'bg-gray-200'} ${isOn ? colors.border : 'border-gray-400'} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[130px] relative ${!isOn ? 'opacity-60' : ''}`}>
       <RotationBadge rotation={data.rotation} />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-red-500" id="positive" style={{ top: '30%' }} />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative" style={{ top: '70%' }} />
+      {/* Positive terminal - input */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-red-500" id="positive-in" style={{ top: '30%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-red-500" id="positive-out" style={{ top: '30%' }} />
+      
+      {/* Negative terminal - input */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-in" style={{ top: '70%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-out" style={{ top: '70%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[8px] font-bold text-red-600" style={{ top: '25%' }}>POS+</div>
+      <div className="absolute left-1 text-[8px] font-bold text-blue-600" style={{ top: '65%' }}>NEG-</div>
       
       {/* On/Off indicator */}
       <div className={`absolute top-1 right-1 w-3 h-3 rounded-full ${isOn ? 'bg-green-500' : 'bg-red-500'}`} title={isOn ? 'ON' : 'OFF'}></div>
@@ -244,22 +381,25 @@ export const BusBarNode = memo(({ data, selected }: ElectricalNodeProps) => {
   return (
     <div className={`px-4 py-2 rounded border-2 ${colors.bg} ${colors.border} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[180px] relative`}>
       <RotationBadge rotation={data.rotation} />
-      {/* Left side - bidirectional main input */}
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-red-500" id="in" />
-      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-red-500" id="in-out" />
+      {/* Left side - bidirectional main input (positive bus) */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-red-500" id="positive-in" />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-red-500" id="positive-in-out" />
       
-      {/* Right side - bidirectional outputs */}
-      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-red-500" id="out1" style={{ top: '20%' }} />
-      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-red-500" id="out1-in" style={{ top: '20%' }} />
+      {/* Right side - bidirectional positive outputs */}
+      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out1" style={{ top: '20%' }} />
+      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out1-in" style={{ top: '20%' }} />
       
-      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-red-500" id="out2" style={{ top: '40%' }} />
-      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-red-500" id="out2-in" style={{ top: '40%' }} />
+      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out2" style={{ top: '40%' }} />
+      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out2-in" style={{ top: '40%' }} />
       
-      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-red-500" id="out3" style={{ top: '60%' }} />
-      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-red-500" id="out3-in" style={{ top: '60%' }} />
+      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out3" style={{ top: '60%' }} />
+      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out3-in" style={{ top: '60%' }} />
       
-      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-red-500" id="out4" style={{ top: '80%' }} />
-      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-red-500" id="out4-in" style={{ top: '80%' }} />
+      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out4" style={{ top: '80%' }} />
+      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-red-500" id="positive-out4-in" style={{ top: '80%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[7px] font-bold text-red-600" style={{ top: '45%' }}>POS+</div>
       
       <div className={`font-semibold ${colors.text} text-center`}>{data.label}</div>
       <div className="h-2 bg-red-600 rounded my-1"></div>
@@ -274,31 +414,35 @@ export const GroundBusNode = memo(({ data, selected }: ElectricalNodeProps) => {
   return (
     <div className={`px-4 py-2 rounded border-2 ${colors.bg} ${colors.border} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[180px] relative`}>
       <RotationBadge rotation={data.rotation} />
-      {/* Left side connections - ALL bidirectional */}
-      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="in1" style={{ top: '20%' }} />
-      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="in1-out" style={{ top: '20%' }} />
+      {/* Left side negative connections - ALL bidirectional */}
+      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="negative-in1" style={{ top: '20%' }} />
+      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="negative-in1-out" style={{ top: '20%' }} />
       
-      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="in2" style={{ top: '40%' }} />
-      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="in2-out" style={{ top: '40%' }} />
+      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="negative-in2" style={{ top: '40%' }} />
+      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="negative-in2-out" style={{ top: '40%' }} />
       
-      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="in3" style={{ top: '60%' }} />
-      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="in3-out" style={{ top: '60%' }} />
+      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="negative-in3" style={{ top: '60%' }} />
+      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="negative-in3-out" style={{ top: '60%' }} />
       
-      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="in4" style={{ top: '80%' }} />
-      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="in4-out" style={{ top: '80%' }} />
+      <Handle type="target" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="negative-in4" style={{ top: '80%' }} />
+      <Handle type="source" position={Position.Left} className="w-2 h-2 !bg-blue-500" id="negative-in4-out" style={{ top: '80%' }} />
       
-      {/* Right side connections - ALL bidirectional */}
-      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="out1" style={{ top: '20%' }} />
-      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="out1-in" style={{ top: '20%' }} />
+      {/* Right side negative connections - ALL bidirectional */}
+      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="negative-out1" style={{ top: '20%' }} />
+      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="negative-out1-in" style={{ top: '20%' }} />
       
-      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="out2" style={{ top: '40%' }} />
-      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="out2-in" style={{ top: '40%' }} />
+      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="negative-out2" style={{ top: '40%' }} />
+      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="negative-out2-in" style={{ top: '40%' }} />
       
-      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="out3" style={{ top: '60%' }} />
-      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="out3-in" style={{ top: '60%' }} />
+      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="negative-out3" style={{ top: '60%' }} />
+      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="negative-out3-in" style={{ top: '60%' }} />
       
-      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="out4" style={{ top: '80%' }} />
-      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="out4-in" style={{ top: '80%' }} />
+      <Handle type="source" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="negative-out4" style={{ top: '80%' }} />
+      <Handle type="target" position={Position.Right} className="w-2 h-2 !bg-blue-500" id="negative-out4-in" style={{ top: '80%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[7px] font-bold text-blue-600" style={{ top: '0px' }}>NEG-</div>
+      <div className="absolute right-1 text-[7px] font-bold text-blue-600" style={{ top: '0px' }}>NEG-</div>
       
       <div className={`font-semibold ${colors.text} text-center`}>{data.label}</div>
       <div className="h-2 bg-blue-600 rounded my-1"></div>
@@ -314,10 +458,21 @@ export const MPPTNode = memo(({ data, selected }: ElectricalNodeProps) => {
   return (
     <div className={`px-4 py-3 rounded-lg border-2 ${colors.bg} ${colors.border} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[150px] relative`}>
       <RotationBadge rotation={data.rotation} />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-orange-500" id="solar-pos" style={{ top: '25%' }} />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-gray-500" id="solar-neg" style={{ top: '75%' }} />
-      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="battery-pos" style={{ top: '25%' }} />
-      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-blue-500" id="battery-neg" style={{ top: '75%' }} />
+      {/* Solar input terminals */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-orange-500" id="solar-positive-in" style={{ top: '25%' }} />
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-gray-700" id="solar-negative-in" style={{ top: '75%' }} />
+      
+      {/* Battery output terminals - bidirectional */}
+      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="battery-positive-out" style={{ top: '25%' }} />
+      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-red-500" id="battery-positive-in" style={{ top: '25%' }} />
+      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-blue-500" id="battery-negative-out" style={{ top: '75%' }} />
+      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-blue-500" id="battery-negative-in" style={{ top: '75%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[7px] font-bold text-orange-600" style={{ top: '18%' }}>PV+</div>
+      <div className="absolute left-1 text-[7px] font-bold text-gray-600" style={{ top: '68%' }}>PV-</div>
+      <div className="absolute right-1 text-[7px] font-bold text-red-600" style={{ top: '18%' }}>BAT+</div>
+      <div className="absolute right-1 text-[7px] font-bold text-blue-600" style={{ top: '68%' }}>BAT-</div>
       
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xl">📊</span>
@@ -338,10 +493,23 @@ export const DCDCChargerNode = memo(({ data, selected }: ElectricalNodeProps) =>
   return (
     <div className={`px-4 py-3 rounded-lg border-2 ${colors.bg} ${colors.border} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[150px] relative`}>
       <RotationBadge rotation={data.rotation} />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-red-500" id="input-pos" style={{ top: '25%' }} />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="input-neg" style={{ top: '75%' }} />
-      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="output-pos" style={{ top: '25%' }} />
-      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-blue-500" id="output-neg" style={{ top: '75%' }} />
+      {/* Input terminals - bidirectional */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-red-500" id="input-positive-in" style={{ top: '25%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-red-500" id="input-positive-out" style={{ top: '25%' }} />
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="input-negative-in" style={{ top: '75%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="input-negative-out" style={{ top: '75%' }} />
+      
+      {/* Output terminals - bidirectional */}
+      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-red-500" id="output-positive-out" style={{ top: '25%' }} />
+      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-red-500" id="output-positive-in" style={{ top: '25%' }} />
+      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-blue-500" id="output-negative-out" style={{ top: '75%' }} />
+      <Handle type="target" position={Position.Right} className="w-3 h-3 !bg-blue-500" id="output-negative-in" style={{ top: '75%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[7px] font-bold text-red-600" style={{ top: '18%' }}>IN+</div>
+      <div className="absolute left-1 text-[7px] font-bold text-blue-600" style={{ top: '68%' }}>IN-</div>
+      <div className="absolute right-1 text-[7px] font-bold text-red-600" style={{ top: '18%' }}>OUT+</div>
+      <div className="absolute right-1 text-[7px] font-bold text-blue-600" style={{ top: '68%' }}>OUT-</div>
       
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xl">🔄</span>
@@ -463,8 +631,17 @@ export const GenericNode = memo(({ data, selected }: ElectricalNodeProps) => {
   return (
     <div className={`px-4 py-3 rounded-lg border-2 ${colors.bg} ${colors.border} ${selected ? 'ring-2 ring-blue-400' : ''} min-w-[120px] relative`}>
       <RotationBadge rotation={data.rotation} />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-gray-500" id="in" />
-      <Handle type="source" position={Position.Right} className="w-3 h-3 !bg-gray-500" id="out" />
+      {/* Positive terminal - bidirectional */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-red-500" id="positive-in" style={{ top: '30%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-red-500" id="positive-out" style={{ top: '30%' }} />
+      
+      {/* Negative terminal - bidirectional */}
+      <Handle type="target" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-in" style={{ top: '70%' }} />
+      <Handle type="source" position={Position.Left} className="w-3 h-3 !bg-blue-500" id="negative-out" style={{ top: '70%' }} />
+      
+      {/* Terminal labels */}
+      <div className="absolute left-1 text-[7px] font-bold text-red-600" style={{ top: '23%' }}>POS+</div>
+      <div className="absolute left-1 text-[7px] font-bold text-blue-600" style={{ top: '63%' }}>NEG-</div>
       
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xl">{icon}</span>
@@ -481,6 +658,8 @@ export const GenericNode = memo(({ data, selected }: ElectricalNodeProps) => {
 export const nodeTypes = {
   'battery': BatteryNode,
   'battery-bank': BatteryNode,
+  'starter-battery': StarterBatteryNode,
+  'house-battery': HouseBatteryNode,
   'solar-panel': SolarPanelNode,
   'solar-array': SolarArrayNode,
   'alternator': AlternatorNode,
@@ -518,5 +697,6 @@ export const nodeTypes = {
   'custom-load': LoadNode,
   'starter-motor': LoadNode,
   'trim-pump': LoadNode,
+  'diesel-heater': LoadNode,
   'default': GenericNode,
 };

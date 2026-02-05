@@ -9,11 +9,16 @@ export type ComponentCategory =
   | 'switching'
   | 'ground';
 
+export type BatteryRole = 'starter' | 'house' | 'generic';
+
 export type ComponentType =
   // Power Sources
   | 'battery'
   | 'battery-bank'
+  | 'starter-battery'
+  | 'house-battery'
   | 'solar-panel'
+  | 'solar-array'
   | 'alternator'
   | 'shore-power'
   // Distribution
@@ -52,6 +57,9 @@ export type ComponentType =
   | 'usb-outlet'
   | 'outlet-12v'
   | 'custom-load'
+  | 'starlink'
+  | 'laptop'
+  | 'monitor'
   // Ground
   | 'ground-bus'
   | 'bonding-bus'
@@ -60,6 +68,8 @@ export type ComponentType =
   | 'starter-motor'
   | 'trim-pump'
   | 'diesel-heater';
+
+export type BatteryChemistry = 'lead-acid' | 'agm' | 'gel' | 'lithium' | 'lifepo4';
 
 export interface ComponentSpec {
   id: string;
@@ -74,6 +84,10 @@ export interface ComponentSpec {
   power?: number; // Power in watts
   capacity?: number; // For batteries, in Ah
   startupCurrent?: number; // Startup/inrush current in amps (for motors, heaters, etc.)
+  // Battery role (starter vs house)
+  batteryRole?: BatteryRole; // 'starter' for engine, 'house' for accessories, 'generic' for unspecified
+  // Battery chemistry
+  batteryChemistry?: BatteryChemistry; // Battery type for charging profile
   // For fuses/breakers
   rating?: number; // Current rating in amps
   // For chargers
@@ -82,21 +96,46 @@ export interface ComponentSpec {
   // For DC-DC chargers with MPPT
   alternatorInputMin?: number; // Min alternator input voltage
   alternatorInputMax?: number; // Max alternator input voltage
+  traditionalAltMin?: number; // Traditional alternator activation threshold (e.g., 13.2V)
+  traditionalAltMax?: number; // Traditional alternator max voltage
+  smartAltMin?: number; // Smart/Euro 6 alternator min voltage
+  smartAltMax?: number; // Smart/Euro 6 alternator max voltage
+  maxInputVoltage?: number; // Max DC input voltage
+  outputVoltageMin?: number; // Min output voltage
+  outputVoltageMax?: number; // Max output voltage
+  maxOutputPower?: number; // Max output power in watts
   solarInputMin?: number; // Min solar input voltage
   solarInputMax?: number; // Max solar input voltage
   maxSolarWattage?: number; // Max solar panel wattage
   maxSolarCurrent?: number; // Max solar charging current
   batteryTypes?: string[]; // Supported battery types
+  // Temperature compensation
+  tempCompNonLithium?: number; // mV/°C/2V for non-lithium batteries
+  tempCompLithium?: number; // mV/°C/2V for lithium batteries
+  // Fuse ratings
+  inputFuseRating?: string; // Recommended input fuse
+  outputFuseRating?: string; // Recommended output fuse
   selfConsumption?: number; // Self-consumption in mA
   operatingTemp?: string; // Operating temperature range
+  storageTemp?: string; // Storage temperature range
   dimensions?: string; // Physical dimensions
   weight?: number; // Weight in kg
+  terminalSize?: string; // Terminal size
+  terminalRange?: string; // Compatible wire gauge range
+  grounding?: string; // Grounding type
+  communication?: string; // Communication protocol
+  protections?: string[]; // Protection features
+  certifications?: string[]; // Certifications
+  warranty?: string; // Warranty information
   // For solar panels
   wattage?: number;
   voc?: number; // Open circuit voltage
   isc?: number; // Short circuit current
   vmp?: number; // Voltage at max power
   imp?: number; // Current at max power
+  // For solar arrays
+  panelCount?: number; // Number of panels in array
+  arrayConfig?: 'parallel' | 'series'; // Array configuration
   // Customizable
   customizable: string[];
 }

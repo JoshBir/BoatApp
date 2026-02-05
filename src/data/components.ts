@@ -1,28 +1,103 @@
 import { ComponentSpec } from '../types';
 
 export const componentSpecs: Record<string, ComponentSpec> = {
-  // Power Sources
+  // Power Sources - Batteries (Starter)
+  'starter-battery': {
+    id: 'starter-battery',
+    type: 'starter-battery',
+    category: 'power-source',
+    name: 'Starter Battery (Lead Acid)',
+    icon: '🔋⚡',
+    description: 'Dedicated 12V lead-acid for engine starting. SEPARATE CIRCUIT - not for house loads!',
+    voltage: 12,
+    capacity: 75,
+    batteryRole: 'starter',
+    batteryChemistry: 'lead-acid',
+    customizable: ['capacity', 'name'],
+  },
+  
+  // Power Sources - House Batteries (Lead Acid)
+  'house-battery-lead-acid': {
+    id: 'house-battery-lead-acid',
+    type: 'house-battery',
+    category: 'power-source',
+    name: 'House Battery (Lead Acid)',
+    icon: '🔋🏠',
+    description: 'Lead-acid house battery. Max 50% discharge, charges to 14.4V bulk/13.6V float.',
+    voltage: 12,
+    capacity: 100,
+    batteryRole: 'house',
+    batteryChemistry: 'lead-acid',
+    customizable: ['capacity', 'name'],
+  },
+  'house-battery-agm': {
+    id: 'house-battery-agm',
+    type: 'house-battery',
+    category: 'power-source',
+    name: 'House Battery (AGM)',
+    icon: '🔋🏠',
+    description: 'AGM deep-cycle battery. Max 50% discharge, charges to 14.7V bulk/13.8V float.',
+    voltage: 12,
+    capacity: 100,
+    batteryRole: 'house',
+    batteryChemistry: 'agm',
+    customizable: ['capacity', 'name'],
+  },
+  
+  // Power Sources - House Batteries (Lithium)
+  'house-battery-lithium': {
+    id: 'house-battery-lithium',
+    type: 'house-battery',
+    category: 'power-source',
+    name: 'House Battery (LiFePO4)',
+    icon: '🔋⚡🏠',
+    description: 'LiFePO4 lithium battery. 80%+ usable capacity, charges to 14.2V, no float needed.',
+    voltage: 12,
+    capacity: 200,
+    batteryRole: 'house',
+    batteryChemistry: 'lifepo4',
+    customizable: ['capacity', 'name'],
+  },
+  
+  // Generic batteries (legacy support)
+  'house-battery': {
+    id: 'house-battery',
+    type: 'house-battery',
+    category: 'power-source',
+    name: 'House Battery Bank',
+    icon: '🔋🏠',
+    description: 'Main battery bank for house loads. Set chemistry in properties.',
+    voltage: 12,
+    capacity: 200,
+    batteryRole: 'house',
+    batteryChemistry: 'lead-acid',
+    customizable: ['capacity', 'name', 'batteryChemistry'],
+  },
   'battery': {
     id: 'battery',
     type: 'battery',
     category: 'power-source',
-    name: 'Battery',
+    name: 'Battery (Generic)',
     icon: '🔋',
-    description: '12V marine battery',
+    description: '12V marine battery (generic - specify role and chemistry)',
     voltage: 12,
     capacity: 100,
-    customizable: ['capacity', 'name'],
+    batteryRole: 'generic',
+    batteryChemistry: 'lead-acid',
+    customizable: ['capacity', 'name', 'batteryChemistry'],
   },
   'battery-bank': {
     id: 'battery-bank',
     type: 'battery-bank',
     category: 'power-source',
-    name: 'Battery Bank',
+    name: 'Battery Bank (Generic)',
     icon: '🔋🔋',
-    description: 'Multiple batteries in parallel/series',
+    description: 'Multiple batteries in parallel/series (specify role and chemistry)',
     voltage: 12,
     capacity: 200,
-    customizable: ['capacity', 'name', 'batteryCount'],
+    batteryRole: 'generic',
+    batteryChemistry: 'lead-acid',
+    customizable: ['capacity', 'name', 'batteryCount', 'batteryChemistry'],
   },
   'solar-panel': {
     id: 'solar-panel',
@@ -191,26 +266,49 @@ export const componentSpecs: Record<string, ComponentSpec> = {
     category: 'charging',
     name: 'Renogy DCC30S',
     icon: '🔄☀️',
-    description: '12V 30A Dual Input DC-DC On-Board Battery Charger with MPPT',
+    description: '12V 30A DC-DC On-Board Battery Charger with MPPT (Model RBC30D1S)',
     voltage: 12,
     chargeRate: 30,
-    efficiency: 98,
-    // Alternator input specs
-    alternatorInputMin: 8,
+    efficiency: 94, // Per spec: 94% charging efficiency
+    // Output specs
+    outputVoltageMin: 9,
+    outputVoltageMax: 16,
+    maxOutputPower: 400, // 400W max output
+    maxCurrent: 30,
+    // Alternator input specs (traditional alternator: 13.2-16V, smart Euro 6: 12-16V)
+    alternatorInputMin: 12, // Smart alternator minimum
     alternatorInputMax: 16,
+    traditionalAltMin: 13.2, // Traditional alternator activation threshold
+    traditionalAltMax: 16,
+    smartAltMin: 12, // Euro 6 smart alternator
+    smartAltMax: 16,
+    maxInputVoltage: 30, // Max input voltage 30 VDC
     // Solar MPPT input specs
     solarInputMin: 9,
     solarInputMax: 32,
     maxSolarWattage: 400,
     maxSolarCurrent: 30,
-    maxCurrent: 30,
-    // Battery compatibility
-    batteryTypes: ['AGM', 'GEL', 'Flooded', 'Lithium (LiFePO4)', 'Calcium'],
+    // Battery compatibility (AGM/SLD, GEL, FLD, LI, USER)
+    batteryTypes: ['AGM', 'SLD', 'GEL', 'Flooded', 'Lithium (LiFePO4)', 'USER'],
+    // Fuse ratings
+    inputFuseRating: '75A-100A',
+    outputFuseRating: '75A-100A',
+    // Temperature compensation
+    tempCompNonLithium: -3, // -3mV/°C/2V for non-lithium
+    tempCompLithium: 0, // 0mV/°C/2V for lithium
     // Other specs
-    selfConsumption: 10,
-    operatingTemp: '-40°C to +85°C',
-    dimensions: '215 x 185 x 73 mm',
-    weight: 1.6,
+    selfConsumption: 30, // <30mA idle power consumption
+    operatingTemp: '-35°C to +65°C',
+    storageTemp: '-40°C to +80°C',
+    dimensions: '244 x 146 x 77 mm',
+    weight: 1.41,
+    terminalSize: 'M8 x 1.25 - 10mm',
+    terminalRange: '8AWG-4AWG',
+    grounding: 'Common Ground',
+    communication: 'RS485',
+    protections: ['Reverse Polarity', 'Overvoltage', 'Over Discharge', 'Overcurrent', 'Over Temperature'],
+    certifications: ['CE', 'ROHS', 'FCC Part 15 class B', 'ETL (UL 1741 & CSA C22.2)'],
+    warranty: '3-year prorated',
     customizable: ['name'],
   },
   'renogy-dcc50s': {
@@ -605,7 +703,19 @@ export const componentSpecs: Record<string, ComponentSpec> = {
 
 // Component palette organized by category
 export const componentPalette = {
-  'power-source': ['battery', 'battery-bank', 'solar-panel', 'alternator', 'shore-power', 'engine'],
+  'power-source': [
+    'starter-battery', 
+    'house-battery-lead-acid', 
+    'house-battery-agm', 
+    'house-battery-lithium', 
+    'battery', 
+    'battery-bank', 
+    'solar-panel', 
+    'solar-array', 
+    'alternator', 
+    'shore-power', 
+    'engine'
+  ],
   'distribution': ['bus-bar', 'distribution-panel', 'junction-box'],
   'protection': ['fuse', 'circuit-breaker', 'fuse-block', 'anl-fuse', 'battery-shunt'],
   'charging': ['dc-dc-charger', 'renogy-dcc30s', 'renogy-dcc50s', 'mppt-controller', 'battery-charger', 'isolator'],
