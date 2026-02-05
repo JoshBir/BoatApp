@@ -33,6 +33,7 @@ const initialEdges: Edge[] = [];
 
 function DiagramEditorInner() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNode, setSelectedNode] = useState<Node<ComponentNodeData> | null>(null);
@@ -207,6 +208,55 @@ function DiagramEditorInner() {
     URL.revokeObjectURL(url);
   }, [currentProject, nodes, edges]);
 
+  // Import project from JSON file
+  const handleImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const importedData = JSON.parse(content);
+        
+        // Validate the imported data has required fields
+        if (!importedData.name || !Array.isArray(importedData.nodes)) {
+          alert('Invalid project file. Missing required fields (name, nodes).');
+          return;
+        }
+
+        // Create a new project from imported data
+        const newProject: Project = {
+          id: uuidv4(), // Generate new ID to avoid conflicts
+          name: importedData.name + ' (Imported)',
+          description: importedData.description || '',
+          systemVoltage: importedData.systemVoltage || 12,
+          nodes: importedData.nodes || [],
+          edges: importedData.edges || [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        // Save and load the imported project
+        saveProject(newProject);
+        setCurrentProject(newProject);
+        setNodes(newProject.nodes as any || []);
+        setEdges(newProject.edges as any || []);
+        setProjects(loadAllProjects());
+        setShowProjectModal(false);
+        
+        alert(`Successfully imported "${importedData.name}"!`);
+      } catch (err) {
+        console.error('Import error:', err);
+        alert('Failed to import project. Please check the file is a valid JSON export.');
+      }
+    };
+    reader.readAsText(file);
+    
+    // Reset the input so the same file can be imported again if needed
+    event.target.value = '';
+  }, [setNodes, setEdges]);
+
   // Calculate system totals
   const systemTotals = useMemo(() => {
     let totalCurrent = 0;
@@ -281,7 +331,27 @@ function DiagramEditorInner() {
               </div>
             </div>
 
-            {/* Templates removed: start-from-template option intentionally omitted */}
+            {/* Import Project */}
+            <div className="mb-6">
+              <h3 className="font-semibold text-gray-800 mb-3">📥 Import Project</h3>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImport}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full p-3 border-2 border-dashed border-blue-300 rounded-lg hover:bg-blue-50 hover:border-blue-500 transition-colors text-left flex items-center gap-3"
+              >
+                <span className="text-2xl">📁</span>
+                <div>
+                  <div className="font-medium text-blue-700">Import from JSON file</div>
+                  <div className="text-xs text-gray-500">Load a previously exported project (.json)</div>
+                </div>
+              </button>
+            </div>
 
             {/* Existing Projects */}
             <div>

@@ -160,8 +160,8 @@ function calculateBatteryState(
   // Use hysteresis to prevent flickering between states
   // Higher threshold to enter a state, lower to exit
   let state: 'charging' | 'discharging' | 'idle';
-  const enterThreshold = 0.5; // Need 0.5A to enter charging/discharging
-  const exitThreshold = 0.2;  // Drop below 0.2A to go back to idle
+  const enterThreshold = 1.0; // Need 1.0A to enter charging/discharging (increased for stability)
+  const exitThreshold = 0.3;  // Drop below 0.3A to go back to idle
   
   if (previousState === 'charging') {
     // Already charging - stay charging unless current drops significantly
@@ -375,8 +375,8 @@ export function runSimulation(
         if (spec.type === 'battery' || spec.type === 'battery-bank') {
           const currentSoC = prevState?.stateOfCharge ?? 80; // Start at 80%
           
-          // Initialize battery circuit tracking
-          batteryCircuits.set(node.id, { generation: 0, load: 0 });
+          // Battery circuits already pre-initialized above - don't reset here
+          // This was causing order-dependent bugs
           
           // Will be updated after load calculation
           nodeStates[node.id] = {
@@ -525,16 +525,19 @@ export function runSimulation(
               targetBatteryVoltage = houseBatt.voltage;
               targetBatterySoC = houseBatt.soc;
             } else {
-              // Fall back to SoC-based detection: higher SoC = source, lower SoC = target
-              const sorted = [...connectedBatteries].sort((a, b) => b.soc - a.soc);
+              // Fall back to stable ID-based detection to prevent flickering
+              // Sort by node ID for consistent ordering (first battery = source, second = target)
+              const sorted = [...connectedBatteries].sort((a, b) => a.id.localeCompare(b.id));
               sourceBatteryId = sorted[0].id;
               // Only use source battery as input if engine running
               if (environment.engineRunning) {
                 inputVoltage = Math.max(inputVoltage, sorted[0].voltage);
               }
-              targetBatteryId = sorted[sorted.length - 1].id;
-              targetBatteryVoltage = sorted[sorted.length - 1].voltage;
-              targetBatterySoC = sorted[sorted.length - 1].soc;
+              // Use the second battery as target (or first if only one)
+              const targetIdx = sorted.length > 1 ? 1 : 0;
+              targetBatteryId = sorted[targetIdx].id;
+              targetBatteryVoltage = sorted[targetIdx].voltage;
+              targetBatterySoC = sorted[targetIdx].soc;
             }
           } else if (connectedBatteries.length === 1) {
             // Single battery - it's the target, alternator/starter is the source (if connected)
@@ -784,7 +787,12 @@ export function runSimulation(
         stateOfCharge: battState.stateOfCharge,
       };
       
-      systemVoltage = battState.voltage;
+      // Only update system voltage from the first (primary) battery to prevent oscillation
+      // Use the battery with the higher capacity as the reference
+      const battCapacity = (node.data.customValues?.capacity as number) || spec?.capacity || 100;
+      if (battCapacity >= 100 || systemVoltage === 12) {
+        systemVoltage = battState.voltage;
+      }
       
       // Warnings
       if (battState.stateOfCharge < 20) {
