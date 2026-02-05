@@ -569,9 +569,10 @@ export const SimulationPanel: React.FC<SimulationPanelProps> = ({
   const [simTime, setSimTime] = useState(0);
   const [simSpeed, setSimSpeed] = useState(1);
   const [simulation, setSimulation] = useState<SystemSimulation | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<string>('6'); // Default to June
   const [environment, setEnvironment] = useState<EnvironmentState>({
-    solarIrradiance: 800,
-    ambientTemp: 25,
+    solarIrradiance: MONTHLY_SOLAR_DATA['6'].avgIrradiance, // June default
+    ambientTemp: MONTHLY_SOLAR_DATA['6'].avgTemp,
     engineRunning: false,
     alternatorRPM: 0,
     shoreConnected: false,
@@ -1437,20 +1438,41 @@ export const SimulationPanel: React.FC<SimulationPanelProps> = ({
           <div className="bg-gray-800 rounded-lg p-4">
             <h4 className="font-semibold text-yellow-400 mb-3">🌤️ Environment</h4>
             <div className="space-y-3 text-sm">
+              {/* Month-based Solar Selection */}
               <div>
-                <label className="text-gray-400 text-xs">Solar Irradiance (W/m²)</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1000"
-                  value={environment.solarIrradiance}
-                  onChange={(e) => setEnvironment((prev) => ({ ...prev, solarIrradiance: Number(e.target.value) }))}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                />
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>0 (Night)</span>
-                  <span className="text-yellow-400">{environment.solarIrradiance}</span>
-                  <span>1000 (Full Sun)</span>
+                <label className="text-gray-400 text-xs mb-2 block">☀️ Select Month (avg. sun levels for UK)</label>
+                <div className="grid grid-cols-6 gap-1 mb-2">
+                  {Object.entries(MONTHLY_SOLAR_DATA).map(([monthNum, data]) => (
+                    <button
+                      key={monthNum}
+                      onClick={() => {
+                        setSelectedMonth(monthNum);
+                        setEnvironment((prev) => ({
+                          ...prev,
+                          solarIrradiance: data.avgIrradiance,
+                          ambientTemp: data.avgTemp,
+                        }));
+                      }}
+                      className={`px-1 py-1.5 rounded text-xs font-medium transition-colors ${
+                        selectedMonth === monthNum
+                          ? 'bg-yellow-500 text-gray-900'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                      title={`${data.name}: ${data.avgIrradiance} W/m², ${data.avgSunHours}h sun, ${data.avgTemp}°C`}
+                    >
+                      {data.shortName}
+                    </button>
+                  ))}
+                </div>
+                <div className="bg-gray-700 rounded p-2 text-xs">
+                  <div className="flex justify-between mb-1">
+                    <span className="text-gray-400">{MONTHLY_SOLAR_DATA[selectedMonth].name}</span>
+                    <span className="text-yellow-400 font-semibold">{environment.solarIrradiance} W/m²</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>☀️ {MONTHLY_SOLAR_DATA[selectedMonth].avgSunHours}h avg sun/day</span>
+                    <span>🌡️ {MONTHLY_SOLAR_DATA[selectedMonth].avgTemp}°C avg</span>
+                  </div>
                 </div>
               </div>
               
